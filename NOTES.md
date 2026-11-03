@@ -192,7 +192,142 @@ is 0.
 
 ---
 
-## 6. Python tools used in the code
+## 6. Stage 3: choosing which warehouses to open
+
+### What changes
+
+So far every warehouse was open and free to keep. Now each warehouse has an
+**opening cost**: money you pay just for keeping it open, whether it ships 1
+unit or 1,000. Two kinds of cost:
+
+- **Variable cost:** grows with what you ship (our shipping cost).
+- **Fixed cost:** paid once per open warehouse (our opening cost).
+
+The question becomes: which warehouses should be open, and who ships what?
+Closing a warehouse saves its opening cost, but shipping gets more expensive,
+because regions must be served from farther away.
+
+### The new variable: a yes/no switch
+
+`open[i]` is 1 if warehouse `i` is open and 0 if it is closed. A variable that
+can only be 0 or 1 is a **binary variable**. A model with some whole-number
+variables and some continuous ones is a **mixed-integer linear program**
+(MILP). The `x` (units shipped) can be any amount. The `open` switches cannot.
+
+### The new objective
+
+Make this smallest:
+
+    (opening cost of every open warehouse)  +  (shipping cost of every shipment)
+
+### The key rule
+
+The capacity rule gets one change:
+
+    units shipped out of warehouse i  <=  capacity[i] * open[i]
+
+| `open[i]` | The right side is | So the warehouse can |
+| --- | --- | --- |
+| 0 (closed) | capacity x 0 = 0 | ship nothing |
+| 1 (open) | capacity x 1 = capacity | ship up to capacity |
+
+One line of math ties the yes/no switch to the shipping. Textbooks call this
+a "big-M" constraint. Here the capacity plays the role of the big number.
+
+### Why it is harder than the LP
+
+With 5 warehouses there are 2 x 2 x 2 x 2 x 2 = 32 open/closed combinations.
+Every extra warehouse doubles that. Solvers do not try them all. They use
+**branch and bound**:
+
+1. Solve an easier version where `open[i]` may be a fraction like 0.4.
+2. If some come out fractional, split into two cases ("closed" and "open") and
+   solve each.
+3. Throw away any case that already costs more than a complete plan you have.
+
+With only 5 warehouses we can also try every combination, which is how the
+tests double-check the solver.
+
+### The small example, by hand
+
+Each warehouse can cover all 230 units (capacity 250). Cost per unit is in the
+table from section 4. Shipping cost for each choice:
+
+| Open | Shipping | Plus opening costs |
+| --- | --- | --- |
+| W1 only | 100x1 + 50x3 + 80x4.5 = $610 | W1's cost |
+| W2 only | 100x4 + 50x2 + 80x0.5 = $540 | W2's cost |
+| Both | 100x1 + 50x2 + 80x0.5 = $240 | both costs |
+
+Say W1 costs $100 to open. Opening W2 as well saves 610 - 240 = **$370** of
+shipping. So W2 is worth opening only if its opening cost is **below $370**.
+The tests check this: at $369 both open, at $371 only W1 stays open.
+
+### Results on the main network (seed 42)
+
+The opening costs are **made-up assumptions** (more below). Computed by the code:
+
+| Plan | Opening cost | Shipping | Total |
+| --- | --- | --- | --- |
+| A. Open all five | $1,442.14 | $2,995.22 | $4,437.36 |
+| B. MILP choice (closes W2) | $1,062.53 | $3,084.51 | $4,147.04 |
+
+Closing W2 adds $89.29 of shipping and saves $379.60 of opening cost. The MILP
+saves **$290.32 (6.54%)** versus opening everything.
+
+### Important: the opening costs are assumptions
+
+Nobody gave us real opening costs. We made them up, so the saving above says
+how the *method* behaves, not what a real company would save. Two honest
+points:
+
+- The first range we tried ($500 to $1,500) made closing a no-brainer, because
+  closing one warehouse adds only about $90 to $1,200 of shipping. We switched
+  to $100 to $600, the same size as those shipping increases, so closing is a
+  real decision. That is a choice about the data, and we say so.
+- Do not put "6.54%" in a headline. The useful result is the method and how it
+  reacts when the assumptions change (next).
+
+### How the answer changes
+
+**Four networks** (opening costs made up the same way):
+
+| Seed | Open everything | MILP | Closes | Saving |
+| --- | --- | --- | --- | --- |
+| 1 | $4,173.71 | $4,083.53 | W5 | 2.16% |
+| 7 | $4,637.33 | $4,221.91 | W4 | 8.96% |
+| 42 | $4,437.36 | $4,147.04 | W2 | 6.54% |
+| 99 | $4,918.38 | $4,801.78 | W4 | 2.37% |
+
+**Opening costs multiplied** (seed 42): W2 stays open at x0.1 and x0.2 and
+closes from x0.25 upward. The flip point is about x0.235, which is the
+shipping added by closing ($89.29) divided by the opening cost saved
+($379.60). That is the break-even idea from the small example.
+
+**Capacity decides how many can close** (seed 42, same opening costs):
+
+| Total capacity / demand | Warehouses open | Closed |
+| --- | --- | --- |
+| 1.2 | 5 | none |
+| 1.4 | 4 | W2 |
+| 2.0 | 3 | W2, W3 |
+| 3.0 | 3 | W2, W3 |
+
+The open warehouses must still cover all demand. At 1.4, only one warehouse
+can close at all, however expensive opening is. At higher ratios more *can*
+close, but with these costs a third closing is not worth it, so 3.0 matches 2.0.
+
+### "GapLimit" status
+
+The solver sometimes reports `GapLimit` instead of `Optimal`. It means it
+stopped because the proven distance to the best possible plan fell below a tiny
+tolerance. We checked that the plan was identical to the exact answer: on all
+four networks, the answer matches trying every open/closed combination. The
+code accepts `Optimal` and `GapLimit`, and raises an error on anything else.
+
+---
+
+## 7. Python tools used in the code
 
 Each of these appears in the project. Try the small example in a Python shell.
 
@@ -227,6 +362,14 @@ store one shipment per warehouse-region pair.
 
 **`break`.** Leave a loop early, as soon as there is nothing left to do.
 
+**`itertools.combinations`.** Every way to pick k items from a list. The tests
+use it to try every set of open warehouses.
+
+    list(combinations(["W1", "W2", "W3"], 2))   # [("W1","W2"), ("W1","W3"), ("W2","W3")]
+
+**`dataclasses.replace`.** Copy an Instance with one field changed. The sweeps
+use it to change the opening costs or capacities without rebuilding anything.
+
 **`lambda`.** A tiny nameless function, used for the key above.
 
     lambda i: instance.dist[(i, j)]        # "given i, return this distance"
@@ -243,7 +386,7 @@ numbers every time. That makes results repeatable and tests possible.
 
 ---
 
-## 7. How the files fit together
+## 8. How the files fit together
 
     data.py        builds the network (Instance)
         |
@@ -251,25 +394,32 @@ numbers every time. That makes results repeatable and tests possible.
         |
     lp_model.py    the optimizer and shadow prices
         |
-    run_stage1.py / run_stage2.py     print the reports
+    milp_model.py  chooses which warehouses to open, plus the cost sweep
+        |
+    run_stage1.py / run_stage2.py / run_stage3.py     print the reports
     tests/                            check everything against hand-worked answers
 
 Read the code in that order.
 
 ---
 
-## 8. PuLP 4 quirks (they cost us time)
+## 9. PuLP 4 quirks (they cost us time)
 
 - Install CBC with `pip install "pulp[cbc]"`. It is no longer built in.
 - Create the **problem first**, then variables with `prob.add_variable_dicts`.
 - With two index lists you get nested dictionaries: `x[i][j]`, not `x[i, j]`.
 - `prob.solve(...)` returns a stats object. Read `stats.status_str`.
 - Read a variable's answer with `x[i][j].value()`.
+- A yes/no variable: `prob.add_variable_dicts("open", W, cat=pulp.LpBinary)`.
+  With one index list the result is a plain dictionary, used as `is_open[i]`.
+- Binary answers can come back as 0.9999999, so test `value > 0.5`, not `== 1`.
+- A mixed-integer solve can return the status `GapLimit` (see section 6).
+- `COIN_CMD(gapRel=0, gapAbs=0)` asks CBC to be as exact as it can.
 - Most online examples are for PuLP 3. If an example breaks, this is why.
 
 ---
 
-## 9. Your 30-second answer (the interview version)
+## 10. Your 30-second answer (the interview version)
 
 > I built a model that decides how to ship products from warehouses to customer
 > regions at the lowest cost. Each shipment between a warehouse and a region
@@ -280,14 +430,17 @@ Read the code in that order.
 > warehouses, so I compared against a fairer version that respects capacity.
 > On my synthetic test network the LP was 7.55% cheaper than that fair
 > baseline, and across four test networks the saving ranged from 0.45% to
-> 7.98%. All data is synthetic.
+> 7.98%. I then added a yes/no variable per warehouse to choose which ones to
+> open when each has an opening cost. On opening costs I assumed, it closed one
+> warehouse and cut total cost by 2% to 9% across four networks, but that
+> depends entirely on the assumed costs. All data is synthetic.
 
 Say it out loud until it feels natural. Do not add numbers you have not
 computed yourself.
 
 ---
 
-## 10. Check yourself
+## 11. Check yourself
 
 1. What are the decision variables, the objective and the constraints?
 2. Why must `sum of x[i][j] for i` equal demand, but only be at most capacity?
@@ -299,15 +452,20 @@ computed yourself.
 8. In `capacity_aware_plan`, what changes if you process the smallest regions
    first instead of the biggest? Predict the effect, then try it.
 9. Why does the LP saving change so much between seeds?
+10. What does `capacity[i] * open[i]` do when `open[i]` is 0, and when it is 1?
+11. Why is opening cost "fixed" and shipping cost "variable"?
+12. Why can only one warehouse close when capacity is 1.4 times demand?
+13. If every opening cost doubled on seed 42, would the MILP's choice change?
+    Predict first, then check Sweep 1 in `run_stage3.py`.
+14. Why can't we call "6.54%" a real-world saving?
 
 ---
 
-## 11. Coming next
+## 12. Coming next
 
-- **Stage 3, MILP:** warehouses get a fixed cost to stay open. Add a yes/no
-  variable per warehouse, and the model decides which ones to open.
-- **Many networks:** repeat the comparison over many seeds and report the range
-  of savings, not one number.
+- **Many networks:** repeat the comparisons over many seeds and report the
+  range of savings, not single numbers.
 - **Stage 4, simulation:** random demand and warehouse outages, to see how
-  often the plan fails and what it costs.
-- **Stage 5:** charts, README and GitHub.
+  often the plan fails and what it costs. Each scenario needs a new solve, so
+  we will check solver speed first.
+- **Stage 5:** charts, README and GitHub write-up.

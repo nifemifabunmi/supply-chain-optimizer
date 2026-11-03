@@ -60,11 +60,13 @@ def build_instance(wh_pos, reg_pos, demand, capacity, fixed_cost, rate):
 
 def generate_instance(seed=42, n_warehouses=5, n_regions=20, grid=100.0,
                       capacity_ratio=1.4, rate=0.05,
-                      demand_range=(50, 200), fixed_cost_range=(500, 1500)):
+                      demand_range=(50, 200), fixed_cost_range=(100, 600)):
     """Make a random network. The same seed always gives the same network.
 
     capacity_ratio:   total capacity = this number * total demand (at least 1)
-    fixed_cost_range: placeholder for now; we tune it in Stage 3
+    fixed_cost_range: an ASSUMPTION, not real data. Closing one warehouse adds
+                      roughly $90 to $1,200 of shipping on our test networks, so
+                      we use $100 to $600 to make opening vs closing a real choice.
     """
     rng = np.random.default_rng(seed)  # the seeded random number generator
 
