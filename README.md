@@ -8,8 +8,8 @@ computed by the code in this repository.
 - [x] v1: synthetic data generator and nearest-warehouse baseline
 - [x] v2: transportation LP (PuLP) and fair capacity-aware baseline
 - [x] v3: facility-location MILP (which warehouses to open)
-- [ ] v4: simulation and sensitivity analysis
-- [ ] v5: figures, results, write-up
+- [x] v4: shortage model, demand simulation, warehouse outages
+- [ ] v5: sensitivity analysis, second-solver check, many networks, figures, write-up
 
 ## Run
 
@@ -21,6 +21,7 @@ python -m pytest
 python run_stage1.py
 python run_stage2.py
 python run_stage3.py
+python run_stage4.py
 ```
 
 ## Layout
@@ -29,6 +30,8 @@ python run_stage3.py
 - `src/baseline.py` : nearest-warehouse plan, fair capacity-aware plan, cost, loads, violations
 - `src/lp_model.py` : transportation LP, shadow prices
 - `src/milp_model.py` : facility-location MILP (open/close warehouses), cost sweep
+- `src/shortage_model.py` : transportation LP where demand may go unmet
+- `src/simulation.py` : random demand scenarios, outages, summary metrics
 - `NOTES.md` : plain-language notes on every concept so far
 - `tests/` : hand-checked and invariant tests
 - `learning/` : small standalone practice scripts (not part of the engine)
