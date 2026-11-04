@@ -1,3 +1,27 @@
+# detailed explanation
+# this file tests the shortage model: a transportation LP where demand is allowed
+# to go unmet, at a penalty per unmet unit (PENALTY, an assumed number).
+# we need it because in the simulation a plan can face more demand than the open
+# warehouses can ship, and a normal LP would just say "infeasible".
+#
+# the tiny example (2 warehouses, 3 regions) is solved by hand. cost per unit:
+#              W1     W2
+#       R1    $1.00  $4.00     demand: R1 = 100, R2 = 50, R3 = 80 (total 230)
+#       R2    $3.00  $2.00
+#       R3    $4.50  $0.50
+# because the penalty is far bigger than any shipping cost, the model delivers as
+# much as capacity allows and leaves unmet the units that are most expensive to serve.
+#
+# checks in this file:
+#   1. enough capacity: nothing unmet, same $270 as stage 2.
+#   2. capacity 100 + 100 vs demand 230: exactly 30 units unmet, all from R2.
+#   3. only W1 open: 80 units unmet, all from R3 (the costliest to serve from W1).
+#   4. no warehouses open: all 230 units unmet and no shipping cost.
+#   5. a custom demand overrides the instance's demand.
+#   6. on random networks with enough capacity it matches the plain LP, and it
+#      matches the MILP's shipping on the MILP's own open set.
+#   7. under a big demand jump the plan still respects capacity, and shipped
+#      plus unmet units add up to demand in every region.
 from dataclasses import replace
 
 import pytest
@@ -9,14 +33,8 @@ from src.milp_model import solve_facility_location
 from src.shortage_model import PENALTY, TINY, solve_with_shortage
 
 
+# the small hand-worked example, with capacities we can change
 def tiny_instance(cap_w1, cap_w2):
-    """The small 2-warehouse, 3-region example worked out by hand.
-
-    Cost per unit:      W1     W2
-                R1    $1.00  $4.00      Demand: R1 = 100, R2 = 50, R3 = 80
-                R2    $3.00  $2.00      (total 230)
-                R3    $4.50  $0.50
-    """
     return build_instance(
         wh_pos={"W1": (0, 0), "W2": (10, 0)},
         reg_pos={"R1": (2, 0), "R2": (6, 0), "R3": (9, 0)},
@@ -27,28 +45,25 @@ def tiny_instance(cap_w1, cap_w2):
     )
 
 
+# same example, but total capacity may be below demand
+# build_instance refuses that on purpose, so build a valid one and shrink it after
 def short_on_capacity_instance(cap_w1, cap_w2):
-    """Same example, but total capacity is allowed to be below demand.
-
-    build_instance refuses that (on purpose), so build a valid instance first
-    and then shrink the capacities.
-    """
     return replace(tiny_instance(250, 250), capacity={"W1": cap_w1, "W2": cap_w2})
 
 
 def test_no_shortage_when_capacity_is_enough():
-    # Same as the Stage 2 answer: $270, nothing unmet.
+    # same as the stage 2 answer: $270, nothing unmet
     sol = solve_with_shortage(tiny_instance(150, 100))
     assert sol.unmet_units == pytest.approx(0.0, abs=1e-6)
     assert sol.shipping_cost == pytest.approx(270.0)
 
 
 def test_shortage_when_capacity_is_too_small():
-    # Capacity is 100 + 100 = 200 but demand is 230, so 30 units must go unmet.
-    # Which 30? The ones that cost most to serve. R2 units cost $2 to $3 each,
-    # R1 units $1 and R3 units $0.50. So 30 units of R2 go unmet:
+    # capacity is 100 + 100 = 200 but demand is 230, so 30 units must go unmet.
+    # which 30? the ones that cost most to serve. R2 units cost $2 to $3 each,
+    # R1 units $1 and R3 units $0.50. so 30 units of R2 go unmet:
     #   W1 ships R1 (100 units, $100). W2 ships R3 (80, $40) and 20 of R2 ($40).
-    #   Shipping = 100 + 40 + 40 = $180.
+    #   shipping = 100 + 40 + 40 = $180.
     sol = solve_with_shortage(short_on_capacity_instance(100, 100))
     assert sol.unmet_units == pytest.approx(30.0)
     assert sol.unmet["R2"] == pytest.approx(30.0)
@@ -57,9 +72,9 @@ def test_shortage_when_capacity_is_too_small():
 
 
 def test_removing_a_warehouse_by_leaving_it_out():
-    # Only W1 can ship, capacity 150 for demand 230, so 80 units go unmet.
-    # The unserved units are R3's, which cost the most per unit from W1 ($4.50).
-    #   W1 ships R1 (100 units, $100) and R2 (50 units, $150). Shipping = $250.
+    # only W1 can ship, capacity 150 for demand 230, so 80 units go unmet.
+    # the unserved units are R3's, which cost the most per unit from W1 ($4.50).
+    #   W1 ships R1 (100 units, $100) and R2 (50 units, $150). shipping = $250.
     sol = solve_with_shortage(tiny_instance(150, 150), open_warehouses=["W1"])
     assert sol.unmet["R3"] == pytest.approx(80.0)
     assert sol.shipping_cost == pytest.approx(250.0)
@@ -81,7 +96,7 @@ def test_demand_override_is_used():
 
 @pytest.mark.parametrize("seed", [1, 7, 42, 99])
 def test_matches_the_lp_when_nothing_is_short(seed):
-    # With every warehouse available and enough capacity, shortages never help.
+    # with every warehouse available and enough capacity, shortages never help
     inst = generate_instance(seed=seed)
     sol = solve_with_shortage(inst)
     assert sol.unmet_units == pytest.approx(0.0, abs=1e-4)
@@ -89,7 +104,7 @@ def test_matches_the_lp_when_nothing_is_short(seed):
 
 
 def test_matches_the_milp_shipping_on_its_own_open_set():
-    # The MILP picked its warehouses AND its shipments. Re-solving with the same
+    # the MILP picked its warehouses AND its shipments. re-solving with the same
     # open warehouses must find the same shipping cost.
     inst = generate_instance(seed=42)
     milp = solve_facility_location(inst)

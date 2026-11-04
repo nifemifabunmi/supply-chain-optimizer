@@ -1,3 +1,21 @@
+# detailed explanation
+# this file tests stage 1: the data generator and the nearest-warehouse baseline.
+# the baseline sends every region to its closest warehouse and ignores capacity.
+#
+# the checks come in two groups.
+# group 1 uses a tiny network small enough to solve on paper:
+#   2 warehouses (W1, W2) and 3 regions (R1, R2, R3), shipping rate $0.5 per unit per km.
+#   R1 is closest to W1, while R2 and R3 are closest to W2.
+#   so W1 ships 100 units and W2 ships 130 units, and the cost is $240.
+#   we also shrink W2's capacity to 100 to prove that an overload gets flagged.
+# group 2 checks the random generator:
+#   the same seed must give the same network, and different seeds must differ.
+#   a generated network must be valid (enough capacity, positive numbers).
+#   too little capacity must raise an error instead of giving odd answers later.
+#   the cost function must match a separate calculation done by hand in the test.
+#
+# why this matters: every later stage builds on this data and this cost function.
+# if they were wrong, every saving we report would be wrong too.
 import pytest
 
 from src.baseline import (
@@ -10,11 +28,8 @@ from src.baseline import (
 from src.data import build_instance, generate_instance
 
 
+# the small hand-worked example. by hand: cost is $240, W1 ships 100, W2 ships 130.
 def tiny_instance(cap_w2=150):
-    """The small 2-warehouse, 3-region example worked out by hand.
-
-    By hand: baseline cost is $240, W1 ships 100 units, W2 ships 130.
-    """
     return build_instance(
         wh_pos={"W1": (0, 0), "W2": (10, 0)},
         reg_pos={"R1": (2, 0), "R2": (6, 0), "R3": (9, 0)},
@@ -25,6 +40,7 @@ def tiny_instance(cap_w2=150):
     )
 
 
+# build the baseline plan and the shipments that come from it
 def baseline(instance):
     plan = nearest_warehouse_plan(instance)
     return plan, shipments_from_plan(instance, plan)
@@ -49,7 +65,7 @@ def test_baseline_loads_and_no_violation():
 
 
 def test_baseline_overload_is_flagged():
-    # W2 can only take 100 but the baseline sends it 130, so it is 30 over.
+    # W2 can only take 100 but the baseline sends it 130, so it is 30 over
     inst = tiny_instance(cap_w2=100)
     _, shipments = baseline(inst)
     assert capacity_violations(inst, shipments) == {"W2": 30}
@@ -94,5 +110,5 @@ def test_cost_matches_a_manual_calculation():
         inst.rate * inst.dist[(i, j)] * units for (i, j), units in shipments.items()
     )
     assert transport_cost(inst, shipments) == pytest.approx(manual)
-    # Every unit of demand is shipped exactly once.
+    # every unit of demand is shipped exactly once
     assert sum(shipments.values()) == sum(inst.demand.values())

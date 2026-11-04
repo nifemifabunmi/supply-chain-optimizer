@@ -1,11 +1,24 @@
-"""Stage 4 report: how does the Stage 3 plan hold up when things go wrong?
-
-Network: the plan the MILP chose on the main network (seed 42).
-
-ASSUMPTIONS (made up, not measured):
-  - demand swings with a coefficient of variation of 0.2
-  - an unmet unit costs $100 (the penalty), far more than any shipping cost
-"""
+# detailed explanation
+# stage 4 report. it asks how the stage 3 plan holds up when things go wrong.
+# the plan is the one the milp chose on the main network (seed 42).
+#
+# two kinds of trouble are tested:
+#   1. random demand: 1,000 scenarios where each region's demand is multiplied
+#      by a random number with mean 1. two responses are compared on the same
+#      scenarios: "fixed" keeps its routes and scales them, and "re-plan" solves
+#      the shipping problem again for each scenario.
+#   2. outages: each open warehouse is taken down, one at a time.
+#
+# main numbers: fill rate (delivered / demanded), the share of scenarios with
+# nothing unmet, and the cost in a bad case (95th percentile).
+#
+# assumptions (made up, not measured):
+#   - demand swings with a coefficient of variation (cv) of 0.2
+#   - an unmet unit costs $100 (the penalty), far more than any shipping cost
+# dollar totals that include the penalty depend on that assumed penalty, so
+# lead with fill rate and the share of fully served scenarios.
+#
+# run it with: python run_stage4.py
 import time
 
 from src.baseline import transport_cost, warehouse_loads
@@ -34,7 +47,7 @@ print(f"{'Warehouse':<10}{'Capacity':>10}{'Planned load':>14}{'Utilization':>13}
 for i in open_list:
     print(f"{i:<10}{inst.capacity[i]:>10}{loads[i]:>14.0f}{loads[i] / inst.capacity[i]:>12.0%}")
 
-# ---- Demand uncertainty ----
+# ---- demand uncertainty ----
 print(f"\nDemand simulation: {N_SCENARIOS} scenarios, cv={CV}, penalty=${PENALTY:.0f} per unmet unit")
 start = time.time()
 result = run_demand_simulation(inst, plan.shipments, open_list,
@@ -55,7 +68,7 @@ print(f"{'Metric':<40}{'Fixed plan':>14}{'Re-plan':>14}")
 for key, name, fmt in labels:
     print(f"{name:<40}{fmt.format(summary['fixed'][key]):>14}{fmt.format(summary['reopt'][key]):>14}")
 
-# ---- Warehouse outages ----
+# ---- warehouse outages ----
 print("\nWarehouse outages (one open warehouse down at a time)")
 print(f"{'Down':<6}{'Usual load':>11}{'No-response':>13}{'No-resp.':>10}{'Re-plan':>13}{'Re-plan':>9}{'Re-plan':>9}")
 print(f"{'':<6}{'(units)':>11}{'unmet':>13}{'fill':>10}{'shipping ($)':>13}{'unmet':>9}{'fill':>9}")

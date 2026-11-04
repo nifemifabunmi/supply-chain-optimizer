@@ -1,3 +1,29 @@
+# detailed explanation
+# this file tests stage 4: the demand simulation and the warehouse outages.
+# the idea: take the plan the MILP chose, then see how it does when demand is
+# random or a warehouse goes down. two responses are compared on the same scenarios:
+#   "fixed"  keeps the planned routes, scaled to the new demand. a warehouse
+#            that would go over capacity cuts all its shipments by the same share.
+#   "reopt"  re-solves the shortage model for each scenario (a re-plan).
+#
+# the tiny example (2 warehouses, 3 regions) is solved by hand. cost per unit:
+#              W1     W2
+#       R1    $1.00  $4.00     demand: R1 = 100, R2 = 50, R3 = 80 (total 230)
+#       R2    $3.00  $2.00
+#       R3    $4.50  $0.50
+# the stage 2 plan for it is R1 from W1, and R2 and R3 from W2, for $240.
+#
+# checks in this file:
+#   1. scenarios: the same seed repeats exactly, zero volatility gives the normal
+#      demand, and random demand stays positive and averages to the normal demand.
+#   2. the fixed plan on the tiny example: normal demand gives $240, half demand
+#      gives $120, 20% more demand overloads W2 so it cuts back, and a warehouse
+#      down loses what it normally ships.
+#   3. the simulation: zero volatility reproduces the plan, the same seed gives
+#      the same summary, a re-plan is never worse than the fixed plan in any
+#      scenario, and the summary numbers are sensible.
+#   4. outages: the tiny example by hand, a re-plan never loses more than doing
+#      nothing, and a re-plan loses only what capacity forces.
 import numpy as np
 import pytest
 
@@ -15,14 +41,8 @@ from src.simulation import (
 )
 
 
+# the small hand-worked example
 def tiny_instance():
-    """The small 2-warehouse, 3-region example worked out by hand.
-
-    Cost per unit:      W1     W2
-                R1    $1.00  $4.00      Demand: R1 = 100, R2 = 50, R3 = 80
-                R2    $3.00  $2.00      (total 230)
-                R3    $4.50  $0.50
-    """
     return build_instance(
         wh_pos={"W1": (0, 0), "W2": (10, 0)},
         reg_pos={"R1": (2, 0), "R2": (6, 0), "R3": (9, 0)},
@@ -33,10 +53,11 @@ def tiny_instance():
     )
 
 
-# The plan from Stage 2 for this example: R1 from W1, R2 and R3 from W2. Cost $240.
+# the plan from stage 2 for this example: R1 from W1, R2 and R3 from W2. cost $240.
 TINY_PLAN = {("W1", "R1"): 100, ("W2", "R2"): 50, ("W2", "R3"): 80}
 
 
+# the main network with the plan the MILP chose
 def milp_network(seed=42):
     inst = generate_instance(seed=seed)
     milp = solve_facility_location(inst)
@@ -76,7 +97,7 @@ def test_fixed_plan_at_normal_demand_reproduces_the_plan():
 
 
 def test_fixed_plan_scales_with_demand():
-    # Every region needs half as much, so half the units ship at half the cost.
+    # every region needs half as much, so half the units ship at half the cost
     inst = tiny_instance()
     half = {j: v / 2 for j, v in inst.demand.items()}
     ship, unmet = fixed_plan_outcome(inst, TINY_PLAN, half)
@@ -85,7 +106,7 @@ def test_fixed_plan_scales_with_demand():
 
 
 def test_fixed_plan_cuts_back_an_overloaded_warehouse():
-    # Demand is 20% higher everywhere. W2 would ship 130 * 1.2 = 156 but can only
+    # demand is 20% higher everywhere. W2 would ship 130 * 1.2 = 156 but can only
     # ship 150, so it cuts every shipment by 150/156. W1 ships 120 (under 150).
     inst = tiny_instance()
     up = {j: v * 1.2 for j, v in inst.demand.items()}
@@ -95,7 +116,7 @@ def test_fixed_plan_cuts_back_an_overloaded_warehouse():
 
 
 def test_fixed_plan_with_a_warehouse_down():
-    # Without a response, everything W2 normally ships (R2 50 and R3 80) is lost.
+    # with no response, everything W2 normally ships (R2 50 and R3 80) is lost
     inst = tiny_instance()
     ship, unmet = fixed_plan_outcome(inst, TINY_PLAN, inst.demand, down={"W2"})
     assert unmet == pytest.approx(130.0)
@@ -121,8 +142,8 @@ def test_same_seed_gives_the_same_summary():
 
 
 def test_replanning_is_never_worse_than_the_fixed_plan():
-    # The fixed plan is one valid way to respond, so the best re-plan can only
-    # match it or beat it in every single scenario.
+    # the fixed plan is one valid way to respond, so the best re-plan can only
+    # match it or beat it in every single scenario
     inst, plan, open_list = milp_network()
     r = run_demand_simulation(inst, plan, open_list, n_scenarios=25, seed=2, cv=0.3)
     fixed_total = r.shipping["fixed"] + r.penalty * r.unmet["fixed"]
@@ -137,7 +158,7 @@ def test_summary_numbers_make_sense():
         assert 0.0 <= stats["fill_rate"] <= 1.0
         assert 0.0 <= stats["full_service_share"] <= 1.0
         assert stats["mean_unmet_units"] >= 0.0
-        # The average of the worst 5% can never be below the 95th percentile.
+        # the average of the worst 5% can never be below the 95th percentile
         assert stats["worst_5pct_avg_cost"] >= stats["p95_total_cost"] - 1e-6
 
 
@@ -147,15 +168,15 @@ def test_outages_on_the_small_example_by_hand():
     inst = tiny_instance()
     rows = {r["warehouse"]: r for r in run_disruptions(inst, TINY_PLAN, ["W1", "W2"])}
 
-    # W2 down. No response: R2 and R3 (130 units) are lost.
+    # W2 down. no response: R2 and R3 (130 units) are lost.
     assert rows["W2"]["no_response_unmet"] == pytest.approx(130.0)
-    # Re-plan: W1 (capacity 150) serves R1 (100) and R2 (50) for $250, and R3's 80 go unmet.
+    # re-plan: W1 (capacity 150) serves R1 (100) and R2 (50) for $250, and R3's 80 go unmet.
     assert rows["W2"]["replan_unmet"] == pytest.approx(80.0)
     assert rows["W2"]["replan_shipping"] == pytest.approx(250.0)
 
-    # W1 down. No response: R1's 100 units are lost.
+    # W1 down. no response: R1's 100 units are lost.
     assert rows["W1"]["no_response_unmet"] == pytest.approx(100.0)
-    # Re-plan: W2 (capacity 150) serves R3 (80, $40), R2 (50, $100) and 20 of R1 ($80)
+    # re-plan: W2 (capacity 150) serves R3 (80, $40), R2 (50, $100) and 20 of R1 ($80)
     # for $220, and 80 units of R1 go unmet.
     assert rows["W1"]["replan_unmet"] == pytest.approx(80.0)
     assert rows["W1"]["replan_shipping"] == pytest.approx(220.0)
@@ -170,7 +191,7 @@ def test_replanning_never_loses_more_demand_than_doing_nothing():
 
 
 def test_replan_loses_only_what_capacity_forces():
-    # Any warehouse can serve any region, and an unmet unit costs far more than
+    # any warehouse can serve any region, and an unmet unit costs far more than
     # shipping it, so the re-plan leaves unmet exactly
     #   (total demand - capacity of the warehouses still open), the minimum possible.
     inst, plan, open_list = milp_network()

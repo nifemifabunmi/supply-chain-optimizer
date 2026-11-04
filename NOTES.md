@@ -1,7 +1,7 @@
 # Project Notes (plain language)
 
 Read this top to bottom once. Then keep it open next to the code.
-Everything here covers what is built so far: Stage 1 (baseline) and Stage 2 (LP).
+Everything here covers what is built: baseline, LP, MILP, simulation, and the Stage 5 checks.
 
 ---
 
@@ -492,6 +492,69 @@ resilient one.** The cost of resilience is the opening cost we saved.
 
 ---
 
+## 7b. Stage 5: how much should we trust the answers?
+
+Four checks. Each one tries to break a result instead of confirming it.
+
+**1. Sensitivity analysis (`src/sensitivity.py`).**
+Change ONE input by -20% and +20%, solve the MILP again, and see how far the
+total cost moves. Do that for shipping rate, demand, total capacity and
+opening cost. The bar chart of the results is called a tornado chart because
+the biggest bar sits on top.
+- Result on seed 42: demand moves the cost most (a swing of $1,940.91), then
+  shipping rate ($1,233.80), then capacity ($730.71), then opening cost
+  ($425.01).
+- A dagger on the chart means the set of open warehouses changed. When that
+  happens the cost does not move smoothly, because the plan itself changed.
+- Opening cost matters least here, but it is also the input we made up. Its
+  small effect on total cost does not mean it is unimportant for the CHOICE:
+  the break-even shows closing decisions flip at 0.24 times our assumed costs.
+- Total capacity up 20% LOWERS cost and down 20% raises it. That is correct:
+  more room means cheaper routes are allowed.
+
+**2. Break-even by bisection.**
+We want the opening-cost level where the MILP first closes a warehouse.
+Bisection: try a cheap level (everything open) and an expensive one
+(something closed), test the middle, keep the half that still contains the
+switch, repeat 20 times. It assumes "more expensive opening means fewer open",
+which holds here. The tests check it against a small example worked by hand
+(370 / 300 = 1.2333).
+
+**3. A second solver (`src/crosscheck.py`).**
+PuLP + CBC solved everything so far. If I made a modelling mistake, a second
+solver run on MY model would just agree with me, so the check is useful only
+because the second model is written separately, with a different library
+(OR-Tools: GLOP for the LP, SCIP for the MILP). On four seeds, both costs
+matched to 6 digits and both opened the same warehouses. What this proves:
+the solver did not make a numerical mistake. What it does NOT prove: that the
+model describes the real world.
+
+**4. Many networks (`src/experiments.py`).**
+One network can be lucky. We repeat the comparisons on 50 random ones.
+- LP saving versus the fair baseline: median 5.40%, mean 6.25%, range 0.00% to
+  20.09%. It was under 1% on seeds 7, 19 and 27. So "the LP saves 7.55%" is
+  true for seed 42 and not a general promise.
+- MILP saving versus keeping all open: median 6.17%, range 0.00% to 13.05%.
+  A 0.00% means every warehouse was worth opening on that network.
+- The nearest-warehouse rule overloaded a warehouse in 49 of 50 networks, so
+  using it as a baseline would have inflated every saving.
+- These ranges describe THIS random generator, not real companies.
+
+**`run_all.py`.** One command regenerates every figure, every number, the
+`results/` files and the results block of the README. Nothing is typed in by
+hand, so the README cannot drift away from the code.
+
+**Reading the five figures.**
+- Network map: the plan on a grid. Thick line = many units.
+- Plan costs: the grey bar is not a valid plan, so it is never used for a saving.
+- Sweep: both lines start equal (everything open), then split once closing a
+  warehouse is cheaper. The vertical line is the break-even.
+- Unmet histogram: the left-most bar is "nothing unmet". The chart uses unmet
+  UNITS, not dollars, because dollars depend on the penalty we assumed.
+- Tornado: longer bar means that input matters more.
+
+---
+
 ## 8. Python tools used in the code
 
 Each of these appears in the project. Try the small example in a Python shell.
@@ -578,7 +641,13 @@ numbers every time. That makes results repeatable and tests possible.
         |
     simulation.py  random demand scenarios, outages, summary numbers
         |
-    run_stage1.py ... run_stage4.py     print the reports
+    sensitivity.py  one-at-a-time changes, break-even
+    crosscheck.py   same models in OR-Tools
+    experiments.py  many random networks
+    plots.py        the five figures
+        |
+    run_stage1.py ... run_stage4.py     print one stage each
+    run_all.py                          regenerates every number and figure
     tests/                            check everything against hand-worked answers
 
 Read the code in that order.
@@ -621,7 +690,10 @@ Read the code in that order.
 > so it delivered about 98% of demand on average but fully served only about a
 > fifth of scenarios. Re-solving the model per scenario restored full service.
 > That showed me that optimizing for the average leaves no slack. All data is
-> synthetic.
+> synthetic. I checked the results three more ways: changing each input by
+> 20% (demand mattered most), re-solving with a second solver library (same
+> answers), and repeating the comparisons on 50 random networks, where the LP
+> saving had a median of about 5% but ranged from 0% to 20%.
 
 Say it out loud until it feels natural. Do not add numbers you have not
 computed yourself.
@@ -654,14 +726,22 @@ computed yourself.
 19. Why do we compare both responses on the same scenarios?
 20. What do you predict if W1 and W5 each had 10% spare capacity? Try it by
     raising their capacity and re-running `run_stage4.py`.
+21. Why does a second solver agreeing with the first not prove the model is right?
+22. Total capacity up 20% lowers the cost. Why does that make sense?
+23. Why report the median and the range over 50 networks instead of one network?
+24. Why does the tornado chart mark the cases where the open set changed?
+25. Bisection needs "more expensive opening means fewer warehouses open".
+    What goes wrong if that is not true?
+26. Which numbers in the README depend on an assumption, and which do not?
 
 ---
 
 ## 13. Coming next
 
-- **Sensitivity analysis:** change one input at a time (shipping rate, demand
-  level, total capacity, opening cost) and see how much the cost moves.
-- **Second solver:** re-solve the LP with OR-Tools (it installed on Python 3.14)
-  and check both give the same cost.
-- **Many networks:** repeat the comparisons over many seeds and report ranges.
-- **Figures, `run_all.py`, README results, final write-up.**
+The planned stages are done. Ideas for a version 6, in the order I would do them:
+
+- **A realistic-network illustration:** real city coordinates, population as a
+  demand proxy, clearly labelled as an illustration and not real company data.
+- **Multiple products or lead times**, if you want a harder model to explain.
+- **A robust plan:** choose the open set to do well across the simulated
+  scenarios, instead of testing one plan and re-planning afterwards.
