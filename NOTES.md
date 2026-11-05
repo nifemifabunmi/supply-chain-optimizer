@@ -555,6 +555,38 @@ hand, so the README cannot drift away from the code.
 
 ---
 
+## 7c. The real-map illustration and the test badge
+
+**Real-map illustration (`src/realistic.py`, `run_realistic.py`).**
+The same LP and MILP, run on real geography instead of random points.
+- Real: the 25 largest US metro areas, with demand proportional to 2020
+  population, and great-circle (haversine) distances between city centres.
+  Populations come from the US census figures on currentresults.com (linked in
+  the file). City coordinates are approximate.
+- Made up: the 8 candidate hubs (our own picks), equal capacity and equal
+  opening cost for every hub, the shipping rate, and the dollar units.
+- Why equal hubs: if every hub costs the same, the answer comes from
+  geography and not from numbers we invented. You can check it by eye: the
+  MILP picks hubs in the West, Texas, the Midwest, the Southeast and the
+  Northeast.
+- It uses `build_instance(..., dist=...)`, a new optional input. Leave it out and
+  distances are straight lines as before.
+- Honest results: the LP saves little over the fair baseline here, because
+  total capacity is 2x demand. Savings depend on how tight capacity is. We also
+  tried a few opening costs before settling on a default, so read the sweep, not
+  one answer.
+
+**haversine.** The shortest distance over the Earth's surface between two
+latitude/longitude points. The test checks New York to Los Angeles is about
+3,936 km, a number you can look up.
+
+**CI (`.github/workflows/tests.yml`).** CI means continuous integration: GitHub
+runs `pytest` for you on every push, on Python 3.12 and 3.13, in a clean
+Linux machine. The badge at the top of the README is green if the tests pass.
+That also covers the "pytest passes in a fresh clone" checklist item.
+
+---
+
 ## 8. Python tools used in the code
 
 Each of these appears in the project. Try the small example in a Python shell.
@@ -733,15 +765,17 @@ computed yourself.
 25. Bisection needs "more expensive opening means fewer warehouses open".
     What goes wrong if that is not true?
 26. Which numbers in the README depend on an assumption, and which do not?
+27. Why give every hub the same opening cost in the real-map illustration?
+28. Why is the LP saving small on the real map, and what would make it bigger?
+29. What does the CI badge prove, and what does it not prove?
 
 ---
 
 ## 13. Coming next
 
-The planned stages are done. Ideas for a version 6, in the order I would do them:
+The planned stages and the real-map illustration are done. Ideas for later:
 
-- **A realistic-network illustration:** real city coordinates, population as a
-  demand proxy, clearly labelled as an illustration and not real company data.
 - **Multiple products or lead times**, if you want a harder model to explain.
 - **A robust plan:** choose the open set to do well across the simulated
   scenarios, instead of testing one plan and re-planning afterwards.
+- **Real road distances** instead of great-circle distances.

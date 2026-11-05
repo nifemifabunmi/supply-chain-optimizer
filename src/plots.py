@@ -284,3 +284,71 @@ def plot_tornado(table, path):
              fontsize=9, color=INK2, ha="left")
     fig.savefig(path, dpi=170)
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# 6. real-map illustration
+# ---------------------------------------------------------------------------
+# hubs and metro areas on a lon/lat plot, with the shipments the milp chose.
+# there is no coastline, only the points, so labels do the work.
+def plot_realistic_map(instance, milp, path):
+    fig, ax = plt.subplots(figsize=(10.5, 6.6))
+    fig.subplots_adjust(top=0.82, bottom=0.08, left=0.06, right=0.98)
+    _title(fig, "Illustration: the same model on a real map",
+           "25 largest US metro areas (size = 2020 population). Candidate hubs are our own picks. "
+           "Not company data.")
+
+    # offsets (dx, dy, align) in points, for labels that would otherwise collide
+    region_offsets = {"Los Angeles": (-8, -3, "right"), "Riverside": (7, 3, "left"),
+                      "San Diego": (7, -9, "left"), "Washington": (-7, -11, "right"),
+                      "Baltimore": (-9, -2, "right"), "Philadelphia": (6, -11, "left"),
+                      "New York": (9, -4, "left"), "Detroit": (7, 3, "left"),
+                      "Charlotte": (7, 2, "left"), "Houston": (7, -10, "left"),
+                      "San Antonio": (-7, -10, "right")}
+    hub_offsets = {"Harrisburg": (-9, 8, "right"), "Columbus": (-10, -3, "right"),
+                   "Chicago hub": (-8, 9, "right"), "Atlanta hub": (-9, -14, "right")}
+
+    max_units = max(milp.shipments.values())
+    for (i, j), units in milp.shipments.items():
+        x0, y0 = instance.wh_pos[i]
+        x1, y1 = instance.reg_pos[j]
+        ax.plot([x0, x1], [y0, y1], color=BLUE, alpha=0.4, solid_capstyle="round",
+                linewidth=0.5 + 3.0 * units / max_units, zorder=1)
+
+    for j in instance.regions:
+        x, y = instance.reg_pos[j]
+        ax.scatter(x, y, s=instance.demand[j] * 1.6, color=MUTED, edgecolor=SURFACE,
+                   linewidth=1.2, zorder=2)
+        dx, dy, ha = region_offsets.get(j, (5, -9, "left"))
+        ax.annotate(j, (x, y), xytext=(dx, dy), textcoords="offset points", fontsize=7.5,
+                    color=INK2, ha=ha, zorder=4)
+
+    for i in instance.warehouses:
+        x, y = instance.wh_pos[i]
+        if i in milp.open_warehouses:
+            ax.scatter(x, y, marker="s", s=150, color=BLUE, edgecolor=SURFACE, linewidth=1.6, zorder=3)
+            dx, dy, ha = hub_offsets.get(i, (7, 7, "left"))
+            ax.annotate(i, (x, y), xytext=(dx, dy), textcoords="offset points", fontsize=9.5,
+                        weight="bold", color=INK, ha=ha, zorder=5)
+        else:
+            ax.scatter(x, y, marker="s", s=150, facecolor=SURFACE, edgecolor=INK2, linewidth=1.5, zorder=3)
+            dx, dy, ha = hub_offsets.get(i, (7, 7, "left"))
+            ax.annotate(f"{i} (closed)", (x, y), xytext=(dx, dy), textcoords="offset points",
+                        fontsize=9, color=INK2, ha=ha, zorder=5)
+
+    ax.set_aspect(1 / np.cos(np.radians(38)))  # keep east-west and north-south roughly to scale
+    ax.set_xlabel("longitude", fontsize=9.5)
+    ax.set_ylabel("latitude", fontsize=9.5)
+    _style_axes(ax, grid_axis="both")
+
+    handles = [
+        Line2D([], [], marker="s", linestyle="", markersize=9, color=BLUE, label="Open hub"),
+        Line2D([], [], marker="s", linestyle="", markersize=9, markerfacecolor=SURFACE,
+               markeredgecolor=INK2, label="Closed hub"),
+        Line2D([], [], marker="o", linestyle="", markersize=7, color=MUTED, label="Metro area"),
+        Line2D([], [], color=BLUE, alpha=0.6, linewidth=2, label="Shipment"),
+    ]
+    ax.legend(handles=handles, loc="lower left", frameon=True, facecolor=SURFACE, edgecolor=GRID,
+              fontsize=9, labelcolor=INK2)
+    fig.savefig(path, dpi=170)
+    plt.close(fig)

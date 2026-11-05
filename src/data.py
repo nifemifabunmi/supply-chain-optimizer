@@ -47,7 +47,10 @@ def euclidean(p, q):
 
 
 # turn raw inputs into an instance, and stop early if the data is bad.
-def build_instance(wh_pos, reg_pos, demand, capacity, fixed_cost, rate):
+# dist is optional. leave it out and distances are straight lines between the
+# positions. pass your own {(warehouse, region): km} to use other distances,
+# for example real great-circle distances between cities.
+def build_instance(wh_pos, reg_pos, demand, capacity, fixed_cost, rate, dist=None):
     # bad data should fail loudly here, not give strange answers later.
     if any(v <= 0 for v in demand.values()):
         raise ValueError("All demands must be positive.")
@@ -63,7 +66,10 @@ def build_instance(wh_pos, reg_pos, demand, capacity, fixed_cost, rate):
     regions = list(reg_pos)
 
     # one distance and one per-unit cost for every warehouse-region pair.
-    dist = {(i, j): euclidean(wh_pos[i], reg_pos[j]) for i in warehouses for j in regions}
+    if dist is None:
+        dist = {(i, j): euclidean(wh_pos[i], reg_pos[j]) for i in warehouses for j in regions}
+    else:
+        dist = dict(dist)
     cost = {pair: rate * d for pair, d in dist.items()}
 
     return Instance(warehouses, regions, dict(wh_pos), dict(reg_pos), dict(demand),
